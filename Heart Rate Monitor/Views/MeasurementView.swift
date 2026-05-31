@@ -413,10 +413,6 @@ private struct TapContentView: View {
             case .finished:
                 VStack(spacing: 16) {
                     if let bpm = vm.currentBPM {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 48))
-                            .foregroundColor(.green)
-
                         Text("\(bpm) BPM")
                             .font(.system(size: 42, weight: .bold))
 
@@ -551,10 +547,6 @@ private struct CameraContentView: View {
                 } else if autoVM.phase == .finished {
                     VStack(spacing: 16) {
                         if let bpm = autoVM.currentBPM {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 48))
-                                .foregroundColor(.green)
-
                             Text("\(bpm) BPM")
                                 .font(.system(size: 42, weight: .bold))
 
@@ -693,6 +685,7 @@ private struct MeasurementStatePromptCard: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Color.primary.opacity(0.06), lineWidth: 1)
         )
+        .padding(.horizontal, 24)
     }
 }
 

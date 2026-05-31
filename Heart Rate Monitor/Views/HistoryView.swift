@@ -14,6 +14,7 @@ struct HistoryView: View {
     @State private var isSelectionMode = false
     @State private var metricMode: HistoryMetric = .heartRate
     @State private var visibleCount: Int = 20
+    @State private var detailedMeasurement: HeartRateEntry? = nil
 
     @State private var monthOffset: Int = 0   // 0 = current month, -1 = previous month
     @State private var selectedDay: Date? = nil
@@ -319,13 +320,14 @@ struct HistoryView: View {
                             }
                         }
 
-                        Section {
-                            ForEach(pagedLog) { entry in
-                                HStack(spacing: 12) {
-                                    if isSelectionMode {
-                                        Image(systemName: selectedEntries.contains(entry.id) ? "checkmark.circle.fill" : "circle")
-                                            .foregroundColor(selectedEntries.contains(entry.id) ? .accentColor : .gray)
-                                    }
+                        if !pagedLog.isEmpty {
+                            Section {
+                                ForEach(pagedLog) { entry in
+                                    HStack(spacing: 12) {
+                                        if isSelectionMode {
+                                            Image(systemName: selectedEntries.contains(entry.id) ? "checkmark.circle.fill" : "circle")
+                                                .foregroundColor(selectedEntries.contains(entry.id) ? .accentColor : .gray)
+                                        }
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         HStack(alignment: .firstTextBaseline, spacing: 4) {
@@ -339,12 +341,8 @@ struct HistoryView: View {
                                                 .font(.subheadline.weight(.semibold))
                                                 .foregroundStyle(.secondary)
                                         }
-                                        if let state = entry.activityState {
-                                            Label(state.displayName, systemImage: "figure.walk")
-                                                .font(.caption2)
-                                                .fontWeight(.semibold)
-                                                .foregroundColor(activityStateColor(for: state))
-                                        }
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.8)
                                         if let stress = entry.stressLevel {
                                             Text(stressDisplayText(for: stress))
                                                 .font(.caption)
@@ -352,7 +350,23 @@ struct HistoryView: View {
                                                 .foregroundColor(stressColor(for: stress))
                                         }
                                     }
-                                    Spacer(minLength: 8)
+
+                                    Spacer(minLength: 2)
+
+                                    if let state = entry.activityState {
+                                        HStack(spacing: 3) {
+                                            Image(systemName: activityStateIcon(for: state))
+                                            Text(state.displayName)
+                                                .lineLimit(1)
+                                                .minimumScaleFactor(0.8)
+                                        }
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(activityStateColor(for: state))
+                                    }
+
+                                    Spacer(minLength: 2)
+
                                     VStack(alignment: .trailing, spacing: 2) {
                                         HStack(spacing: 4) {
                                             Image(systemName: "calendar")
@@ -387,6 +401,8 @@ struct HistoryView: View {
                                         } else {
                                             selectedEntries.insert(entry.id)
                                         }
+                                    } else {
+                                        detailedMeasurement = entry
                                     }
                                 }
                                 .onAppear {
@@ -398,13 +414,7 @@ struct HistoryView: View {
                                 vm.deleteEntries(ids: toDelete)
                                 updateVisibleCountForFilter()
                             }
-
-                            if pagedLog.isEmpty {
-                                Text("No measurements in this period.")
-                                    .foregroundStyle(.secondary)
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                    .padding(.vertical, 12)
-                            }
+                            .listRowSeparator(.hidden)
                         } header: {
                             HStack {
                                 Text(measurementsHeaderTitle)
@@ -441,12 +451,17 @@ struct HistoryView: View {
                             }
                         }
                         .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+                        }
                     }
+                    .listStyle(.grouped)
                     .scrollContentBackground(.hidden)
                 }
             }
             .navigationTitle("Stats")
             .navigationBarTitleDisplayMode(.large)
+        }
+        .sheet(item: $detailedMeasurement) { entry in
+            MeasurementDetailView(entry: entry)
         }
         .onChange(of: vm.log) { _, _ in
             updateVisibleCountForFilter()
@@ -551,6 +566,14 @@ private extension HistoryView {
             return "\(pct)% stressed"
         }
         return stress
+    }
+
+    func activityStateIcon(for state: MeasurementState) -> String {
+        switch state {
+        case .resting: return "bed.double.fill"
+        case .activity: return "figure.run"
+        case .recovery: return "heart.circle.fill"
+        }
     }
 
     func activityStateColor(for state: MeasurementState) -> Color {
@@ -877,5 +900,126 @@ private final class PassThroughTapView: UIView {
     @objc private func handleTap(_ gr: UITapGestureRecognizer) {
         let point = gr.location(in: self)
         onTap?(point)
+    }
+}
+
+private struct MeasurementDetailView: View {
+    let entry: HeartRateEntry
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    VStack(alignment: .center, spacing: 16) {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 64))
+                            .foregroundStyle(.red)
+                        
+                        HStack(alignment: .firstTextBaseline) {
+                            Text("\(entry.bpm)")
+                                .font(.system(size: 80, weight: .black, design: .rounded))
+                                .foregroundStyle(heartRateValueColor(for: entry.bpm))
+                            Text("BPM")
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                }
+
+                Section("Details") {
+                    HStack {
+                        Label("Date", systemImage: "calendar")
+                        Spacer()
+                        Text(entry.date, format: .dateTime.month(.wide).day().year())
+                            .foregroundStyle(.secondary)
+                    }
+                    HStack {
+                        Label("Time", systemImage: "clock")
+                        Spacer()
+                        Text(entry.date, style: .time)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let state = entry.activityState {
+                        HStack {
+                            Label("Activity", systemImage: activityStateIcon(for: state))
+                            Spacer()
+                            Text(state.displayName)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(activityStateColor(for: state))
+                        }
+                    }
+                    if let stress = entry.stressLevel {
+                        HStack {
+                            Label("Stress Level", systemImage: "brain.head.profile")
+                            Spacer()
+                            Text(stressDisplayText(for: stress))
+                                .fontWeight(.medium)
+                                .foregroundStyle(stressColor(for: stress))
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Measurement Details")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+    
+    private func stressPercentage(from stress: String) -> Int? {
+        Int(stress.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private func stressColor(for stress: String) -> Color {
+        if let pct = stressPercentage(from: stress) {
+            if pct >= 70 { return .red }
+            if pct >= 40 { return .orange }
+            return .green
+        }
+
+        let normalized = stress.lowercased()
+        if normalized.contains("high") || normalized.contains("stressed") { return .red }
+        if normalized.contains("medium") || normalized.contains("moderate") { return .orange }
+        return .green
+    }
+
+    private func stressDisplayText(for stress: String) -> String {
+        if let pct = stressPercentage(from: stress) {
+            return "\(pct)% stressed"
+        }
+        return stress
+    }
+
+    private func activityStateIcon(for state: MeasurementState) -> String {
+        switch state {
+        case .resting: return "bed.double.fill"
+        case .activity: return "figure.run"
+        case .recovery: return "heart.circle.fill"
+        }
+    }
+
+    private func activityStateColor(for state: MeasurementState) -> Color {
+        switch state {
+        case .resting:
+            return .blue
+        case .activity:
+            return .orange
+        case .recovery:
+            return .mint
+        }
+    }
+
+    private func heartRateValueColor(for bpm: Int) -> Color {
+        switch bpm {
+        case 60...100:
+            return .green
+        case 50...59, 101...110:
+            return .yellow
+        default:
+            return .red
+        }
     }
 }
