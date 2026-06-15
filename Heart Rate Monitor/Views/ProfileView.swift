@@ -64,6 +64,10 @@ struct ProfileView: View {
                     },
                     onCancel: { editingField = nil }
                 )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.regularMaterial)
+                .interactiveDismissDisabled(false)
             }
             .onChange(of: auth.isSignedIn) { _, isSignedIn in
                 if isSignedIn {
@@ -400,6 +404,9 @@ struct EditFieldSheet: View {
     var onSave: (String) -> Void
     var onCancel: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dismiss) private var dismiss
+
     @State private var draft: String = ""
     @State private var numericValue: Int = 0
     @State private var heightFeet: Int = 5
@@ -413,29 +420,38 @@ struct EditFieldSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 8) {
-                    fieldEditor
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(spacing: 14) {
+                        fieldEditor
+                        
+                        Button {
+                            onSave(saveValue)
+                        } label: {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                Text("Save")
+                                    .fontWeight(.semibold)
+                            }
+                            .frame(width: 180)
+                            .padding()
+                            .background(LinearGradient(colors: [.red, .pink], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                        }
+                        .disabled(!canSave)
+                        .buttonStyle(.plain)
+                        .padding(.top, 8)
+                    }
                 }
-                Spacer(minLength: 0)
+                .padding(.horizontal)
+                .padding(.top, 12)
+                .padding(.bottom, 24)
             }
-            .padding()
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Edit \(fieldName)")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        onSave(saveValue)
-                    }
-                    .fontWeight(.bold)
-                    .disabled(!canSave)
-                }
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        onCancel()
-                    }
-                }
-            }
+            .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 draft = initialValue
                 initializeState()
@@ -475,29 +491,33 @@ struct EditFieldSheet: View {
             .padding(10)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color(.secondarySystemBackground))
+                    .fill(Color(.systemBackground))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    .stroke(Color(.separator), lineWidth: 1)
             )
+            .shadow(color: .black.opacity(colorScheme == .light ? 0.06 : 0), radius: 8, x: 0, y: 3)
         default:
             TextField(fieldName, text: $draft, axis: field == .health ? .vertical : .horizontal)
                 .focused($textFocused)
+                .submitLabel(.done)
                 .textInputAutocapitalization(autocapitalization)
                 .keyboardType(keyboardType)
                 .autocorrectionDisabled(field != .name)
                 .lineLimit(field == .health ? 6 : 1)
                 .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                .padding(.vertical, 14)
                 .background(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color(.secondarySystemBackground))
+                        .fill(Color(.systemBackground))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                        .stroke(Color(.separator), lineWidth: 1)
                 )
+                .shadow(color: .black.opacity(colorScheme == .light ? 0.06 : 0), radius: 8, x: 0, y: 3)
+                .foregroundColor(.primary)
         }
     }
 
@@ -533,7 +553,8 @@ struct EditFieldSheet: View {
     private func wheelEditor(valueText: String, selection: Binding<Int>, values: [Int]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(valueText)
-                .font(.headline)
+                .font(.title2)
+                .fontWeight(.semibold)
 
             Picker("", selection: selection) {
                 ForEach(values, id: \.self) { value in
@@ -546,21 +567,23 @@ struct EditFieldSheet: View {
             .frame(height: 140)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.vertical, 14)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
+                .fill(Color(.systemBackground))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                .stroke(Color(.separator), lineWidth: 1)
         )
+        .shadow(color: .black.opacity(colorScheme == .light ? 0.06 : 0), radius: 8, x: 0, y: 3)
     }
 
     private func heightWheelEditor(valueText: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(valueText)
-                .font(.headline)
+                .font(.title2)
+                .fontWeight(.semibold)
 
             if unitSystem == .metric {
                 Picker("", selection: $numericValue) {
@@ -599,21 +622,23 @@ struct EditFieldSheet: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.vertical, 14)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
+                .fill(Color(.systemBackground))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                .stroke(Color(.separator), lineWidth: 1)
         )
+        .shadow(color: .black.opacity(colorScheme == .light ? 0.06 : 0), radius: 8, x: 0, y: 3)
     }
 
     private func weightWheelEditor(valueText: String, selection: Binding<Int>) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(valueText)
-                .font(.headline)
+                .font(.title2)
+                .fontWeight(.semibold)
 
             Picker("", selection: selection) {
                 ForEach(Array(weightRange), id: \.self) { value in
@@ -626,15 +651,16 @@ struct EditFieldSheet: View {
             .frame(height: 160)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.vertical, 14)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
+                .fill(Color(.systemBackground))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                .stroke(Color(.separator), lineWidth: 1)
         )
+        .shadow(color: .black.opacity(colorScheme == .light ? 0.06 : 0), radius: 8, x: 0, y: 3)
     }
 
     private func initializeState() {
