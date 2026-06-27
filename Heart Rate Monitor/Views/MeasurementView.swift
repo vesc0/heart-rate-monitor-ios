@@ -228,7 +228,8 @@ private struct StressContentView: View {
                     }
 
                 } else if stressVM.phase == .finished {
-                    VStack(spacing: 20) {
+                    ScrollView {
+                        VStack(spacing: 20) {
                         if let bpm = stressVM.currentBPM {
                             Text("Heart Rate: \(bpm) BPM")
                                 .font(.title3)
@@ -241,7 +242,7 @@ private struct StressContentView: View {
                         }
 
                         if stressVM.isPredicting {
-                            ProgressView("Analysing…")
+                            ProgressView("Analyzing…")
                         } else if let result = stressVM.stressResult {
                             let pct = result.stressLevelPct
                             let color: Color = pct >= 70 ? .red : pct >= 40 ? .orange : .green
@@ -258,6 +259,19 @@ private struct StressContentView: View {
                             Text(pct >= 70 ? "High Stress" : pct >= 40 ? "Moderate Stress" : "Low Stress")
                                 .font(.title3)
                                 .foregroundColor(color)
+                                
+                            if let explanation = result.explanation {
+                                Text(explanation)
+                                    .font(.callout)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.leading)
+                                    .padding(16)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .fill(Color(.secondarySystemBackground))
+                                    )
+                                    .padding(.horizontal, 24)
+                            }
                         } else if let predictionError = stressVM.errorMessage,
                                   stressVM.currentBPM != nil {
                             Text(predictionError)
@@ -276,8 +290,10 @@ private struct StressContentView: View {
                         .disabled(selectedState == nil || stressVM.currentBPM == nil || stressVM.isPredicting)
                         .opacity((selectedState == nil || stressVM.currentBPM == nil || stressVM.isPredicting) ? 0.55 : 1)
                         .padding(.horizontal, 64)
+                        }
+                        .padding(.vertical, 24)
+                        .frame(maxWidth: .infinity, minHeight: 400)
                     }
-                    .frame(maxHeight: .infinity, alignment: .center)
                 }
 
                 Spacer()
@@ -316,11 +332,13 @@ private struct StressContentView: View {
     private func saveFinishedStressMeasurement() {
         guard let bpm = stressVM.currentBPM, let state = selectedState else { return }
         let stress = stressVM.stressResult.map { String(format: "%.0f%%", $0.stressLevelPct) }
+        let explanation = stressVM.stressResult?.explanation
         let entry = HeartRateEntry(
             bpm: bpm,
             date: Date(),
             stressLevel: stress,
-            activityState: state
+            activityState: state,
+            stressExplanation: explanation,
         )
         vm.addEntry(entry)
         selectedState = nil

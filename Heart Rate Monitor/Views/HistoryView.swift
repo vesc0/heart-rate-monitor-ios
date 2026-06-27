@@ -962,6 +962,10 @@ private struct MeasurementDetailView: View {
                                 .foregroundStyle(stressColor(for: stress))
                         }
                     }
+                    if let explanation = entry.stressExplanation {
+                        Section("AI Analysis") {Text(explanation)
+                        }
+                    }
                 }
             }
             .navigationTitle("Measurement Details")

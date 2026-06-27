@@ -180,10 +180,12 @@ struct StressPredictRequest: Encodable {
 struct StressPredictResponse: Codable {
     let stressLevelPct: Double
     let isStressed: Bool
+    let explanation: String?
 
     enum CodingKeys: String, CodingKey {
         case stressLevelPct = "stress_level_pct"
         case isStressed = "is_stressed"
+        case explanation
     }
 }
 
@@ -198,9 +200,9 @@ final class APIService {
     static let shared = APIService()
 
     #if targetEnvironment(simulator)
-    private let baseURL = "http://172.20.10.4:8000"
+    private let baseURL = "http://172.20.10.5:8000"
     #else
-    private let baseURL = "http://172.20.10.4:8000"
+    private let baseURL = "http://172.20.10.5:8000"
     #endif
 
     private let session: URLSession
@@ -369,7 +371,7 @@ final class APIService {
     func predictStress(features: StressPredictRequest) async throws -> StressPredictResponse {
         let bodyData = try JSONEncoder().encode(features)
         let bodyDict = try JSONSerialization.jsonObject(with: bodyData) as? [String: Any] ?? [:]
-        return try await request(.post, path: "/stress-predict-llm", body: bodyDict, authenticated: true)
+        return try await request(.post, path: "/stress-analysis", body: bodyDict, authenticated: true)
     }
 
     // MARK: - Internals

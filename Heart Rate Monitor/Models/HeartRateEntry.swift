@@ -78,8 +78,9 @@ struct HeartRateEntry: Identifiable, Codable, Equatable {
     let id: UUID
     let bpm: Int
     let date: Date
-    let stressLevel: String?  // e.g. "Stressed", "Not Stressed", nil for regular measurements
+    let stressLevel: String?
     let activityState: MeasurementState?
+    let stressExplanation: String?
 
     // convenience initializer for new entries
     init(
@@ -87,16 +88,18 @@ struct HeartRateEntry: Identifiable, Codable, Equatable {
         date: Date,
         id: UUID = UUID(),
         stressLevel: String? = nil,
-        activityState: MeasurementState? = nil
+        activityState: MeasurementState? = nil,
+        stressExplanation: String? = nil
     ) {
         self.id = id
         self.bpm = bpm
         self.date = date
         self.stressLevel = stressLevel
         self.activityState = activityState
+        self.stressExplanation = stressExplanation
     }
 
-    private enum CodingKeys: String, CodingKey { case id, bpm, date, stressLevel, activityState }
+    private enum CodingKeys: String, CodingKey { case id, bpm, date, stressLevel, activityState, stressExplanation }
 
     // custom decode to keep compatibility if older entries lack stressLevel/activityState
     init(from decoder: Decoder) throws {
@@ -110,5 +113,6 @@ struct HeartRateEntry: Identifiable, Codable, Equatable {
         } else {
             activityState = nil
         }
+        stressExplanation = try? c.decode(String.self, forKey: .stressExplanation)
     }
 }
