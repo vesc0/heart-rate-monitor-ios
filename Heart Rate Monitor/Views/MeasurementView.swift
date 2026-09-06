@@ -181,10 +181,6 @@ private struct StressContentView: View {
 
                         Button {
                             onStart()
-                            stressVM.userAge = auth.age.flatMap { Int($0) }
-                            stressVM.userGender = auth.gender
-                            stressVM.userHeightCm = auth.heightCm.flatMap { Int($0) }
-                            stressVM.userWeightKg = auth.weightKg.flatMap { Int($0) }
                             stressVM.startSession()
                         } label: {
                             Label("Start Stress Session", systemImage: "play.fill")

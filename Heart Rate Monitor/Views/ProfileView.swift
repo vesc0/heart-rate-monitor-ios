@@ -18,6 +18,15 @@ struct ProfileView: View {
     enum EditableField: String, CaseIterable, Identifiable {
         case name, email, age, gender, height, weight, health
         var id: String { rawValue }
+
+        // Matches the server-side limits, so invalid input never round-trips.
+        var characterLimit: Int? {
+            switch self {
+            case .name:   return 120
+            case .health: return 500
+            default:      return nil
+            }
+        }
     }
 
     var body: some View {
@@ -506,6 +515,11 @@ struct EditFieldSheet: View {
                 .keyboardType(keyboardType)
                 .autocorrectionDisabled(field != .name)
                 .lineLimit(field == .health ? 6 : 1)
+                .onChange(of: draft) { _, new in
+                    if let limit = field.characterLimit, new.count > limit {
+                        draft = String(new.prefix(limit))
+                    }
+                }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 14)
                 .background(

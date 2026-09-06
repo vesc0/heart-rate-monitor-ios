@@ -24,12 +24,6 @@ final class StressViewModel: NSObject, ObservableObject {
     // Result populated after the API responds.
     @Published var stressResult: StressPredictResponse?
 
-    // Demographics from user profile (set by the view before starting).
-    var userAge: Int?
-    var userGender: String?
-    var userHeightCm: Int?
-    var userWeightKg: Int?
-
     // True while waiting for the server prediction.
     @Published var isPredicting: Bool = false
 
@@ -135,37 +129,52 @@ final class StressViewModel: NSObject, ObservableObject {
         }
     }
 
+    // Mirrors the training pipeline's clean(): drop non-physiological and locally
+    // deviant intervals, reporting which surviving pairs are still adjacent.
+    private static func cleanRR(_ rr: [Double]) -> (values: [Double], adjacent: [Bool]) {
+        var ok = rr.map { $0 >= 300 && $0 <= 2000 }
+        let physiological = rr.indices.filter { ok[$0] }
+        if physiological.count >= 5 {
+            let surviving = physiological.map { rr[$0] }
+            for (i, index) in physiological.enumerated() {
+                let reference = medianOfFive(surviving, at: i)
+                if abs(rr[index] - reference) > 0.2 * reference { ok[index] = false }
+            }
+        }
+        let kept = rr.indices.filter { ok[$0] }
+        return (kept.map { rr[$0] }, zip(kept, kept.dropFirst()).map { $1 == $0 + 1 })
+    }
+
+    // Averages the middle pair on even counts, as the training pipeline does.
+    private static func median(_ x: [Double]) -> Double {
+        let s = x.sorted()
+        return x.count % 2 == 0 ? (s[x.count / 2 - 1] + s[x.count / 2]) / 2 : s[x.count / 2]
+    }
+
+    private static func medianOfFive(_ x: [Double], at i: Int) -> Double {
+        (-2...2).map { i + $0 >= 0 && i + $0 < x.count ? x[i + $0] : 0 }.sorted()[2]
+    }
+
     // Build a StressPredictRequest from the collected RR intervals.
     private func computeHRVFeatures() -> StressPredictRequest? {
-        // Convert to milliseconds
-        let rr = measurementIntervals.map { $0 * 1000.0 }
-        guard rr.count >= 10 else { return nil }
+        let (rr, adjacent) = Self.cleanRR(measurementIntervals.map { $0 * 1000.0 })
+        guard rr.count >= 30 else { return nil }
+
+        // Successive differences, never taken across a discarded beat.
+        let diffs = adjacent.indices.filter { adjacent[$0] }.map { rr[$0 + 1] - rr[$0] }
+        guard diffs.count > 1 else { return nil }
 
         let n = Double(rr.count)
         let meanRR   = rr.reduce(0, +) / n
-        let medianRR = rr.sorted()[rr.count / 2]
+        let medianRR = Self.median(rr)
 
         let variance = rr.reduce(0.0) { $0 + pow($1 - meanRR, 2) } / (n - 1)
         let sdnn     = sqrt(variance)
         let cvRR     = meanRR > 0 ? sdnn / meanRR : 0
 
-        // Successive differences
-        let diffs = zip(rr.dropFirst(), rr).map { $0 - $1 }
-        let rmssd: Double = {
-            guard !diffs.isEmpty else { return 0 }
-            let sumSq = diffs.reduce(0.0) { $0 + $1 * $1 }
-            return sqrt(sumSq / Double(diffs.count))
-        }()
-        let pnn50: Double = {
-            guard !diffs.isEmpty else { return 0 }
-            let count = diffs.filter { abs($0) > 50 }.count
-            return Double(count) / Double(diffs.count) * 100
-        }()
-        let pnn20: Double = {
-            guard !diffs.isEmpty else { return 0 }
-            let count = diffs.filter { abs($0) > 20 }.count
-            return Double(count) / Double(diffs.count) * 100
-        }()
+        let rmssd = sqrt(diffs.reduce(0.0) { $0 + $1 * $1 } / Double(diffs.count))
+        let pnn50 = Double(diffs.filter { abs($0) > 50 }.count) / Double(diffs.count) * 100
+        let pnn20 = Double(diffs.filter { abs($0) > 20 }.count) / Double(diffs.count) * 100
 
         // Heart rate stats (from each RR interval)
         let hrs = rr.map { 60000.0 / $0 }
@@ -244,18 +253,13 @@ final class StressViewModel: NSObject, ObservableObject {
             }
         }
 
-        // Nonlinear: Poincaré SD1, SD2
-        // SD1 = SDSD/√2 ≈ RMSSD/√2 (SDSD ≈ RMSSD for large N)
-        let sd1: Double = diffs.count > 1 ? rmssd / sqrt(2.0) : 0
+        // Nonlinear: Poincaré SD1 = SDSD/√2, matching the trained features.
+        let diffMean = diffs.reduce(0, +) / Double(diffs.count)
+        let sdsd = sqrt(diffs.reduce(0.0) { $0 + pow($1 - diffMean, 2) } / Double(diffs.count - 1))
+        let sd1 = sdsd / sqrt(2.0)
         let sd2Sq = 2.0 * sdnn * sdnn - sd1 * sd1
         let sd2: Double = sd2Sq > 0 ? sqrt(sd2Sq) : 0
         let sdRatio: Double = sd1 > 0 ? sd2 / sd1 : 0
-
-        // Demographics (optional)
-        let age: Double? = userAge.map { Double($0) }
-        let genderMale: Double? = userGender.map { $0 == "male" ? 1.0 : 0.0 }
-        let heightCm: Double? = userHeightCm.map { Double($0) }
-        let weightKg: Double? = userWeightKg.map { Double($0) }
 
         return StressPredictRequest(
             sdnn:       sdnn,
@@ -276,11 +280,7 @@ final class StressViewModel: NSObject, ObservableObject {
             lfNorm:     lfNorm,
             sd1:        sd1,
             sd2:        sd2,
-            sdRatio:    sdRatio,
-            age:        age,
-            genderMale: genderMale,
-            heightCm:   heightCm,
-            weightKg:   weightKg
+            sdRatio:    sdRatio
         )
     }
 

@@ -70,12 +70,6 @@ struct AuthTokenResponse: Decodable {
     }
 }
 
-struct RegisterResponse: Decodable {
-    let message: String
-    let email: String?
-    let name: String?
-}
-
 struct UserProfileResponse: Decodable {
     let name: String?
     let email: String
@@ -147,11 +141,6 @@ struct StressPredictRequest: Encodable {
     let sd1: Double
     let sd2: Double
     let sdRatio: Double
-    // Demographics (optional)
-    let age: Double?
-    let genderMale: Double?
-    let heightCm: Double?
-    let weightKg: Double?
 
     enum CodingKeys: String, CodingKey {
         case sdnn
@@ -170,10 +159,6 @@ struct StressPredictRequest: Encodable {
         case lfNorm = "lf_norm"
         case sd1, sd2
         case sdRatio = "sd_ratio"
-        case age
-        case genderMale = "gender_male"
-        case heightCm = "height_cm"
-        case weightKg = "weight_kg"
     }
 }
 
@@ -189,8 +174,16 @@ struct StressPredictResponse: Codable {
     }
 }
 
-private struct APIErrorDetail: Codable {
+private struct APIErrorDetail: Decodable {
+    struct FieldError: Decodable { let field: String; let message: String }
     let detail: String
+    let errors: [FieldError]?
+
+    // The API reports 422s as a generic detail plus per-field messages.
+    var displayMessage: String {
+        guard let first = errors?.first else { return detail }
+        return "\(first.field.components(separatedBy: " -> ").last ?? first.field): \(first.message)"
+    }
 }
 
 // MARK: - Service
@@ -200,9 +193,9 @@ final class APIService {
     static let shared = APIService()
 
     #if targetEnvironment(simulator)
-    private let baseURL = "http://172.20.10.5:8000"
+    private let baseURL = "enter_url_here"
     #else
-    private let baseURL = "http://172.20.10.5:8000"
+    private let baseURL = "enter_url_here"
     #endif
 
     private let session: URLSession
@@ -278,10 +271,13 @@ final class APIService {
 
     // MARK: - Auth
 
+    // Registration already returns a session token, so no follow-up login is needed.
     @discardableResult
-    func register(email: String, password: String) async throws -> RegisterResponse {
+    func register(email: String, password: String) async throws -> AuthTokenResponse {
         let body: [String: Any] = ["email": email, "password": password]
-        return try await request(.post, path: "/register", body: body)
+        let response: AuthTokenResponse = try await request(.post, path: "/register", body: body)
+        token = response.accessToken
+        return response
     }
 
     @discardableResult
@@ -445,7 +441,7 @@ final class APIService {
             NotificationCenter.default.post(name: .authTokenExpired, object: nil)
             throw APIError.unauthorized
         default:
-            let detail = (try? decoder.decode(APIErrorDetail.self, from: data))?.detail
+            let detail = (try? decoder.decode(APIErrorDetail.self, from: data))?.displayMessage
                 ?? "Unknown error"
             throw APIError.serverError(http.statusCode, detail)
         }

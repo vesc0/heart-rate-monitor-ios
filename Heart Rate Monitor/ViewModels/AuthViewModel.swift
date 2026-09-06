@@ -76,9 +76,7 @@ final class AuthViewModel: ObservableObject {
         guard validatePassword(password) else { throw AuthError.weakPassword }
 
         do {
-            try await api.register(email: email, password: password)
-            // Auto-login after successful registration
-            let response = try await api.login(email: email, password: password)
+            let response = try await api.register(email: email, password: password)
             applyLoginResponse(response, fallbackEmail: email)
         } catch let error as AuthError {
             throw error

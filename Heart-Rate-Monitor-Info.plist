@@ -4,15 +4,9 @@
 <dict>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSAllowsArbitraryLoads</key>
+		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSCameraUsageDescription</key>
-	<string>Heart Rate Monitor uses the camera to estimate heart rate and stress during measurement sessions.</string>
-	<key>NSHealthUpdateUsageDescription</key>
-	<string>Heart Rate Monitor writes your measured heart rate values to the Health app when you grant permission.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Heart Rate Monitor needs access to your local network to sync heart rate data with the server.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_http._tcp</string>
