@@ -192,11 +192,7 @@ final class APIService {
 
     static let shared = APIService()
 
-    #if targetEnvironment(simulator)
-    private let baseURL = "enter_url_here"
-    #else
-    private let baseURL = "enter_url_here"
-    #endif
+    private let baseURL: String
 
     private let session: URLSession
     private let decoder: JSONDecoder
@@ -205,21 +201,29 @@ final class APIService {
     private let tokenKey = "auth.accessToken"
 
     var token: String? {
-        get { UserDefaults.standard.string(forKey: tokenKey) }
-        set {
-            if let newValue {
-                UserDefaults.standard.set(newValue, forKey: tokenKey)
-            } else {
-                UserDefaults.standard.removeObject(forKey: tokenKey)
-            }
-        }
+        get { Keychain.string(forKey: tokenKey) }
+        set { Keychain.set(newValue, forKey: tokenKey) }
     }
 
     var isAuthenticated: Bool { token != nil }
 
     // MARK: Init
 
+    // API_BASE_URL comes from Config.xcconfig via the Info.plist; a build without it
+    // would otherwise fail later with an opaque networking error.
+    private static func configuredBaseURL() -> String {
+        let raw = (Bundle.main.object(forInfoDictionaryKey: "APIBaseURL") as? String ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: raw), let scheme = url.scheme,
+              scheme == "https" || scheme == "http", url.host != nil else {
+            fatalError("Invalid APIBaseURL \"\(raw)\" — set API_BASE_URL in Config.xcconfig")
+        }
+        return raw.hasSuffix("/") ? String(raw.dropLast()) : raw
+    }
+
     private init() {
+        baseURL = Self.configuredBaseURL()
+
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest  = 15
         config.timeoutIntervalForResource = 30
@@ -267,6 +271,12 @@ final class APIService {
 
         encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
+
+        // Adopt a token stored by a build that predates Keychain storage.
+        if let legacy = UserDefaults.standard.string(forKey: tokenKey) {
+            Keychain.set(legacy, forKey: tokenKey)
+            UserDefaults.standard.removeObject(forKey: tokenKey)
+        }
     }
 
     // MARK: - Auth

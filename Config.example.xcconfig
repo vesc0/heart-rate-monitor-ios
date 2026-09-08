@@ -1,0 +1,10 @@
+// Copy to Config.xcconfig and set the API host. `//` starts a comment in
+// xcconfig, so the scheme is split with $():
+//
+//   API_BASE_URL = https:/$()/your-api-host.example.com
+//
+// Per-destination overrides work too:
+//
+//   API_BASE_URL[sdk=iphonesimulator*] = http:/$()/localhost:8000
+
+API_BASE_URL =
