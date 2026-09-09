@@ -105,6 +105,7 @@ struct HeartRateEntryResponse: Codable, Identifiable {
     let recordedAt: Date
     let createdAt: Date
     let stressLevel: String?
+    let stressExplanation: String?
     let activityState: MeasurementState?
 
     enum CodingKeys: String, CodingKey {
@@ -112,6 +113,7 @@ struct HeartRateEntryResponse: Codable, Identifiable {
         case recordedAt = "recorded_at"
         case createdAt  = "created_at"
         case stressLevel = "stress_level"
+        case stressExplanation = "stress_explanation"
         case activityState = "activity_state"
     }
 }
@@ -330,21 +332,19 @@ final class APIService {
 
     // MARK: - Heart-rate CRUD
 
+    // Upserts on the server, so this doubles as the update path.
     @discardableResult
-    func createHeartRateEntry(
-        id: String? = nil,
-        bpm: Int,
-        recordedAt: Date,
-        stressLevel: String? = nil,
-        activityState: MeasurementState? = nil
-    ) async throws -> HeartRateEntryResponse {
+    func createHeartRateEntry(_ entry: HeartRateEntry) async throws -> HeartRateEntryResponse {
         let isoFormatter = ISO8601DateFormatter()
         isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let isoDate = isoFormatter.string(from: recordedAt)
-        var body: [String: Any] = ["bpm": bpm, "recorded_at": isoDate]
-        if let id { body["id"] = id.lowercased() }
-        if let stressLevel { body["stress_level"] = stressLevel }
-        if let activityState { body["activity_state"] = activityState.rawValue }
+        var body: [String: Any] = [
+            "id": entry.id.uuidString.lowercased(),
+            "bpm": entry.bpm,
+            "recorded_at": isoFormatter.string(from: entry.date),
+        ]
+        if let stressLevel = entry.stressLevel { body["stress_level"] = stressLevel }
+        if let explanation = entry.stressExplanation { body["stress_explanation"] = explanation }
+        if let state = entry.activityState { body["activity_state"] = state.rawValue }
         return try await request(.post, path: "/heart-rate", body: body, authenticated: true)
     }
 

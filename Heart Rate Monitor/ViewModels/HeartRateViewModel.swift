@@ -43,7 +43,14 @@ class HeartRateViewModel: ObservableObject {
 
     // Persistence
     private let saveKey = "HeartRateLog"
+    private let pendingCreatesKey = "HeartRateLog.pendingCreates"
+    private let pendingDeletesKey = "HeartRateLog.pendingDeletes"
     private let healthSyncEnabledKey = "AppleHealthSyncEnabled"
+
+    // Outbox: work the server has not acknowledged yet, retried on every refresh.
+    private var pendingCreates: Set<UUID> = []
+    private var pendingDeletes: Set<UUID> = []
+    private var isFlushing = false
     private let api = APIService.shared
     private let healthKit = HealthKitService.shared
 
@@ -188,8 +195,9 @@ class HeartRateViewModel: ObservableObject {
     // Insert a new entry locally and sync to the server.
     func addEntry(_ entry: HeartRateEntry) {
         log.insert(entry, at: 0)
+        pendingCreates.insert(entry.id)
         saveLocal()
-        syncCreate(entry)
+        flush()
         if isAppleHealthSyncEnabled {
             Task {
                 _ = await healthKit.saveHeartRate(bpm: entry.bpm, at: entry.date)
@@ -232,23 +240,30 @@ class HeartRateViewModel: ObservableObject {
     // Delete entries by their IDs (locally + remote).
     func deleteEntries(ids: Set<UUID>) {
         log.removeAll { ids.contains($0.id) }
+        // Entries the server never received just disappear; there is nothing to delete.
+        pendingDeletes.formUnion(ids.subtracting(pendingCreates))
+        pendingCreates.subtract(ids)
         saveLocal()
-        syncDelete(ids: ids)
+        flush()
     }
 
     // Update a single existing entry locally and sync the latest value to the server.
     func updateEntry(_ entry: HeartRateEntry) {
         guard let idx = log.firstIndex(where: { $0.id == entry.id }) else { return }
         log[idx] = entry
+        pendingCreates.insert(entry.id)
         saveLocal()
-        syncCreate(entry)
+        flush()
     }
 
-    // Persist the current log to UserDefaults (local cache only).
+    // Persist the current log and outbox to UserDefaults (local cache only).
     func saveLocal() {
+        let defaults = UserDefaults.standard
         if let encoded = try? JSONEncoder().encode(log) {
-            UserDefaults.standard.set(encoded, forKey: saveKey)
+            defaults.set(encoded, forKey: saveKey)
         }
+        defaults.set(pendingCreates.map(\.uuidString), forKey: pendingCreatesKey)
+        defaults.set(pendingDeletes.map(\.uuidString), forKey: pendingDeletesKey)
     }
 
     // Legacy alias kept for callers that only need a local write (e.g. demo seed).
@@ -257,22 +272,25 @@ class HeartRateViewModel: ObservableObject {
     // Clear all local data (used on sign-out to prevent data leakage between accounts).
     func clearForLogout() {
         log.removeAll()
-        UserDefaults.standard.removeObject(forKey: saveKey)
+        pendingCreates.removeAll()
+        pendingDeletes.removeAll()
+        [saveKey, pendingCreatesKey, pendingDeletesKey].forEach(UserDefaults.standard.removeObject(forKey:))
     }
 
-    // Fetch entries from the API and replace the local cache.
+    // Drain the outbox, then replace the cache with the server's view of the data.
     func refreshFromServer() {
         guard api.isAuthenticated else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
+            await self.flushOutbox()
             do {
-                var allRemote: [HeartRateEntryResponse] = []
+                var remote: [HeartRateEntryResponse] = []
                 var offset = 0
                 let pageSize = 500
 
                 while true {
                     let page = try await api.fetchHeartRateEntries(limit: pageSize, offset: offset)
-                    allRemote.append(contentsOf: page)
+                    remote.append(contentsOf: page)
 
                     if page.count < pageSize {
                         break
@@ -280,15 +298,24 @@ class HeartRateViewModel: ObservableObject {
                     offset += pageSize
                 }
 
-                self.log = allRemote.map {
-                    HeartRateEntry(
-                        bpm: $0.bpm,
-                        date: $0.recordedAt,
-                        id: UUID(uuidString: $0.id) ?? UUID(),
-                        stressLevel: $0.stressLevel,
-                        activityState: $0.activityState
+                var merged: [UUID: HeartRateEntry] = [:]
+                for item in remote {
+                    guard let id = UUID(uuidString: item.id), !self.pendingDeletes.contains(id) else { continue }
+                    merged[id] = HeartRateEntry(
+                        bpm: item.bpm,
+                        date: item.recordedAt,
+                        id: id,
+                        stressLevel: item.stressLevel,
+                        activityState: item.activityState,
+                        stressExplanation: item.stressExplanation
                     )
                 }
+                // Anything still queued has not reached the server, so keep the local copy.
+                for entry in self.log where self.pendingCreates.contains(entry.id) {
+                    merged[entry.id] = entry
+                }
+
+                self.log = merged.values.sorted { $0.date > $1.date }
                 self.saveLocal()
             } catch {
                 // Keep local data on error; server refresh is best-effort
@@ -297,50 +324,72 @@ class HeartRateViewModel: ObservableObject {
     }
 
     private func loadData() {
-        if UserDefaults.standard.object(forKey: healthSyncEnabledKey) == nil {
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: healthSyncEnabledKey) == nil {
             isAppleHealthSyncEnabled = true
         } else {
-            isAppleHealthSyncEnabled = UserDefaults.standard.bool(forKey: healthSyncEnabledKey)
+            isAppleHealthSyncEnabled = defaults.bool(forKey: healthSyncEnabledKey)
         }
 
         // Load cached data from UserDefaults first (instant)
-        if let data = UserDefaults.standard.data(forKey: saveKey),
+        if let data = defaults.data(forKey: saveKey),
            let decoded = try? JSONDecoder().decode([HeartRateEntry].self, from: data) {
             log = decoded
         }
+        pendingCreates = Self.storedIDs(defaults.stringArray(forKey: pendingCreatesKey))
+        pendingDeletes = Self.storedIDs(defaults.stringArray(forKey: pendingDeletesKey))
+
         // Then try to refresh from the server in the background
         refreshFromServer()
     }
 
-    // MARK: - Remote sync helpers (fire-and-forget)
-
-    private func syncCreate(_ entry: HeartRateEntry) {
-        guard api.isAuthenticated else { return }
-        Task {
-            do {
-                try await api.createHeartRateEntry(
-                    id: entry.id.uuidString,
-                    bpm: entry.bpm,
-                    recordedAt: entry.date,
-                    stressLevel: entry.stressLevel,
-                    activityState: entry.activityState
-                )
-            } catch {
-                // syncCreate failed; logged for debugging before, left silent now
-            }
-        }
+    private static func storedIDs(_ raw: [String]?) -> Set<UUID> {
+        Set((raw ?? []).compactMap(UUID.init(uuidString:)))
     }
 
-    private func syncDelete(ids: Set<UUID>) {
-        guard api.isAuthenticated else { return }
-        let idStrings = ids.map(\.uuidString)
-        Task {
+    // MARK: - Outbox
+
+    private func flush() {
+        Task { @MainActor [weak self] in await self?.flushOutbox() }
+    }
+
+    // Retries queued work. Anything that fails stays queued for the next attempt;
+    // anything the server rejects outright is dropped so it cannot block the queue.
+    @MainActor
+    private func flushOutbox() async {
+        guard api.isAuthenticated, !isFlushing else { return }
+        guard !pendingCreates.isEmpty || !pendingDeletes.isEmpty else { return }
+        isFlushing = true
+        defer { isFlushing = false }
+
+        if !pendingDeletes.isEmpty {
+            let ids = pendingDeletes
             do {
-                try await api.deleteHeartRateEntries(ids: idStrings)
+                try await api.deleteHeartRateEntries(ids: ids.map(\.uuidString))
+                pendingDeletes.subtract(ids)
             } catch {
-                // syncDelete failed; previously logged for debugging
+                if Self.isRejected(error) { pendingDeletes.subtract(ids) }
             }
         }
+
+        for id in pendingCreates {
+            guard let entry = log.first(where: { $0.id == id }) else {
+                pendingCreates.remove(id)
+                continue
+            }
+            do {
+                try await api.createHeartRateEntry(entry)
+                pendingCreates.remove(id)
+            } catch {
+                if Self.isRejected(error) { pendingCreates.remove(id) }
+            }
+        }
+
+        saveLocal()
+    }
+
+    private static func isRejected(_ error: Error) -> Bool {
+        guard case .serverError(let code, _)? = error as? APIError else { return false }
+        return (400..<500).contains(code)
     }
 }
-

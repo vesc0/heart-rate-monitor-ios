@@ -19,18 +19,15 @@ enum Keychain {
         return String(data: data, encoding: .utf8)
     }
 
+    // Replaces rather than updates: SecItemUpdate cannot change kSecAttrAccessible,
+    // so an in-place update would silently leave the previous value behind.
     static func set(_ value: String?, forKey key: String) {
-        guard let data = value?.data(using: .utf8) else {
-            SecItemDelete(query(key))
-            return
-        }
-        let attributes: [CFString: Any] = [
+        SecItemDelete(query(key))
+        guard let data = value?.data(using: .utf8) else { return }
+        SecItemAdd(query(key, [
             kSecValueData: data,
             kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-        ]
-        if SecItemUpdate(query(key), attributes as CFDictionary) == errSecItemNotFound {
-            SecItemAdd(query(key, attributes), nil)
-        }
+        ]), nil)
     }
 
     private static func query(_ key: String, _ extra: [CFString: Any] = [:]) -> CFDictionary {
