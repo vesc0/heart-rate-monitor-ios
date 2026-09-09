@@ -6,111 +6,28 @@
 //
 
 import Foundation
-import AVFoundation
-import SwiftUI
 
-final class StressViewModel: NSObject, ObservableObject {
+// A 60-second window, long enough for the frequency-domain HRV features the
+// stress model expects.
+final class StressViewModel: PPGMeasurementViewModel {
 
-    // MARK: UI state
-
-    @Published var phase: SessionPhase = .idle
-    @Published var currentBPM: Int?     = nil
-    @Published var secondsLeft: Int     = 0
-    @Published var heartScale: CGFloat  = 1.0
-    @Published var canShowBPM: Bool     = false
-    @Published var errorMessage: String?
-    @Published var flashUnavailableAlert: String?
-
-    // Result populated after the API responds.
+    // Populated once the API responds.
     @Published var stressResult: StressPredictResponse?
-
-    // True while waiting for the server prediction.
-    @Published var isPredicting: Bool = false
-
-    // MARK: Internal state
-
-    private var stoppedEarly = false
-
-    // Calibration
-    private var calibrationBeats: Int = 0
-    private let calibrationBeatsRequired = 4
-
-    // Measurement
-    private var measurementStartTime: CFTimeInterval?
-    private var revealTimeElapsed = false
-    private var measurementIntervals: [TimeInterval] = []
-
-    // Capture
-    let session = AVCaptureSession()
-    private var device: AVCaptureDevice?
-    private let videoOutput = AVCaptureVideoDataOutput()
-    private let captureQueue = DispatchQueue(label: "stress.hr.capture")
-
-    // Timers
-    private var phaseTimer: Timer?
-    private var countdownTimer: Timer?
-    private var bpmRevealTimer: Timer?
-
-    // Signal processing
-    private var lastCentered: Double = 0
-    private var ema: Double?
-    private var window: [Double] = []
-    private let windowSize = 45
-    private var lastPeakTS: CFTimeInterval?
-
-    // Constraints
-    private let minInt: TimeInterval = 0.27   // ~220 BPM
-    private let maxInt: TimeInterval = 1.50   // ~40 BPM
-
-    // Durations – 60 s measurement window for HRV
-    private let measureDuration: TimeInterval = 60
-    private let bpmRevealAfter: TimeInterval  = 4.0
+    @Published var isPredicting = false
 
     private let api = APIService.shared
 
-    // MARK: - Session lifecycle
+    init() { super.init(measureDuration: 60) }
 
-    func startSession() {
-        guard phase == .idle || phase == .finished else { return }
-        reset()
-        stoppedEarly = false
-        phase = .measuring
-
-        captureQueue.async {
-            self.configureSessionIfNeeded()
-            self.session.startRunning()
-
-            DispatchQueue.main.async {
-                guard self.session.isRunning else { return }
-                _ = self.turnTorch(on: true)
-            }
-        }
-    }
-
-    func stopSessionEarly() {
-        stoppedEarly = true
-        phase = .idle
-        cleanupCamera()
-        invalidateTimers()
-    }
-
-    private func endSession() {
-        if !stoppedEarly {
-            currentBPM = computeBPM(from: measurementIntervals)
-            phase = .finished
-            requestPrediction()
-        } else {
-            currentBPM = nil
-            phase = .idle
-        }
-        cleanupCamera()
-        invalidateTimers()
+    override func reset() {
+        super.reset()
+        stressResult = nil
+        isPredicting = false
     }
 
     // MARK: - Stress prediction
 
-    // Compute HRV features from measurementIntervals and call the API.
-    private func requestPrediction() {
+    override func measurementDidFinish() {
         guard let features = computeHRVFeatures() else {
             errorMessage = "Not enough beats to analyze. Try again."
             return
@@ -157,7 +74,7 @@ final class StressViewModel: NSObject, ObservableObject {
 
     // Build a StressPredictRequest from the collected RR intervals.
     private func computeHRVFeatures() -> StressPredictRequest? {
-        let (rr, adjacent) = Self.cleanRR(measurementIntervals.map { $0 * 1000.0 })
+        let (rr, adjacent) = Self.cleanRR(intervals.map { $0 * 1000.0 })
         guard rr.count >= 30 else { return nil }
 
         // Successive differences, never taken across a discarded beat.
@@ -283,274 +200,4 @@ final class StressViewModel: NSObject, ObservableObject {
             sdRatio:    sdRatio
         )
     }
-
-    // MARK: - Timers
-
-    private func startPhase(duration: TimeInterval) {
-        secondsLeft = Int(duration)
-
-        countdownTimer?.invalidate()
-        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] t in
-            guard let self else { return }
-            self.secondsLeft -= 1
-            if self.secondsLeft <= 0 { t.invalidate() }
-        }
-
-        phaseTimer?.invalidate()
-        phaseTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
-            self?.endSession()
-        }
-    }
-
-    private func scheduleBPMReveal(after delay: TimeInterval) {
-        canShowBPM = false
-        revealTimeElapsed = false
-        bpmRevealTimer?.invalidate()
-        bpmRevealTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-            guard let self else { return }
-            self.revealTimeElapsed = true
-            self.updateCanShowBPM()
-        }
-    }
-
-    private func updateCanShowBPM() {
-        canShowBPM = (measurementStartTime != nil) && revealTimeElapsed
-    }
-
-    private func invalidateTimers() {
-        phaseTimer?.invalidate();    phaseTimer = nil
-        countdownTimer?.invalidate(); countdownTimer = nil
-        bpmRevealTimer?.invalidate(); bpmRevealTimer = nil
-    }
-
-    // MARK: - Camera setup (identical to AutoHeartRateViewModel)
-
-    private func configureSessionIfNeeded() {
-        guard session.inputs.isEmpty else { return }
-
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized: break
-        case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .video) { [weak self] ok in
-                DispatchQueue.main.async {
-                    if ok { self?.configureSessionIfNeeded() }
-                    else { self?.errorMessage = "Camera access denied." }
-                }
-            }
-            return
-        default:
-            errorMessage = "Camera access denied. Enable it in Settings."
-            return
-        }
-
-        session.beginConfiguration()
-        session.sessionPreset = .low
-
-        // Try cameras in order: ultrawide - telephoto - main (closest to flash first)
-        let cameraTypes: [AVCaptureDevice.DeviceType] = [
-            .builtInUltraWideCamera,
-            .builtInTelephotoCamera,
-            .builtInWideAngleCamera
-        ]
-        
-        var cam: AVCaptureDevice?
-        for deviceType in cameraTypes {
-            if let device = AVCaptureDevice.default(deviceType, for: .video, position: .back) {
-                cam = device
-                break
-            }
-        }
-        
-        guard let cam = cam,
-              let input = try? AVCaptureDeviceInput(device: cam),
-              session.canAddInput(input) else {
-            errorMessage = "No back camera available."
-            session.commitConfiguration()
-            return
-        }
-        session.addInput(input)
-        device = cam
-
-        videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String:
-                                     kCVPixelFormatType_32BGRA]
-        videoOutput.alwaysDiscardsLateVideoFrames = true
-        videoOutput.setSampleBufferDelegate(self, queue: captureQueue)
-
-        guard session.canAddOutput(videoOutput) else {
-            errorMessage = "Cannot add video output."
-            session.commitConfiguration()
-            return
-        }
-        session.addOutput(videoOutput)
-
-        try? cam.lockForConfiguration()
-        if let range = cam.activeFormat.videoSupportedFrameRateRanges.first {
-            let target = min(max(30.0, range.minFrameRate), range.maxFrameRate)
-            cam.activeVideoMinFrameDuration = CMTime(value: 1, timescale: CMTimeScale(target))
-            cam.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: CMTimeScale(target))
-        }
-        cam.unlockForConfiguration()
-
-        session.commitConfiguration()
-    }
-
-    @discardableResult
-    private func turnTorch(on: Bool) -> Bool {
-        guard let dev = device, dev.hasTorch else { return false }
-        do {
-            try dev.lockForConfiguration()
-            if on {
-                try dev.setTorchModeOn(level: min(0.7, AVCaptureDevice.maxAvailableTorchLevel))
-                flashUnavailableAlert = nil
-            } else {
-                dev.torchMode = .off
-            }
-            dev.unlockForConfiguration()
-            return true
-        } catch {
-            if on {
-                // Flash/torch is unavailable, likely due to thermal constraints
-                flashUnavailableAlert = "Flash is unavailable. Your device may be too hot. Please let it cool down or move to a cooler environment."
-                errorMessage = "Flash is unavailable due to device temperature. Please cool down your device."
-            }
-            return false
-        }
-    }
-
-    private func cleanupCamera() {
-        if Thread.isMainThread {
-            captureQueue.sync {
-                turnTorch(on: false)
-                session.stopRunning()
-            }
-        } else {
-            turnTorch(on: false)
-            session.stopRunning()
-        }
-    }
-
-    deinit {
-        cleanupCamera()
-        invalidateTimers()
-    }
-
-    // MARK: - Signal processing
-
-    private func reset() {
-        currentBPM = nil
-        secondsLeft = 0
-        heartScale = 1.0
-        errorMessage = nil
-        stressResult = nil
-        isPredicting = false
-
-        ema = nil
-        window.removeAll()
-        lastCentered = 0
-        lastPeakTS = nil
-
-        calibrationBeats = 0
-        measurementStartTime = nil
-        revealTimeElapsed = false
-        measurementIntervals.removeAll()
-
-        canShowBPM = false
-    }
-
-    private func handleSample(_ redMean: Double) {
-        guard phase == .measuring else { return }
-
-        if ema == nil { ema = redMean }
-        ema = 0.2 * redMean + 0.8 * (ema ?? redMean)
-        let value = ema ?? redMean
-
-        window.append(value)
-        if window.count > windowSize { window.removeFirst() }
-        let mean = window.reduce(0, +) / Double(window.count)
-        let centered = value - mean
-
-        let variance = window.reduce(0.0) { $0 + pow($1 - mean, 2) } / Double(max(1, window.count - 1))
-        let std = sqrt(variance)
-        let threshold = max(0.5 * std, 0.5)
-
-        let derivative = centered - lastCentered
-        let isLocalMax = (derivative <= 0) && (lastCentered > threshold)
-
-        if isLocalMax {
-            let now = CACurrentMediaTime()
-            if let last = lastPeakTS {
-                let dt = now - last
-                if dt >= minInt && dt <= maxInt {
-                    if let start = measurementStartTime, now >= start {
-                        measurementIntervals.append(dt)
-                        currentBPM = computeBPM(from: Array(measurementIntervals.suffix(5)))
-                    } else {
-                        calibrationBeats += 1
-                        if calibrationBeats >= calibrationBeatsRequired && measurementStartTime == nil {
-                            measurementStartTime = now
-                            measurementIntervals.removeAll()
-                            currentBPM = nil
-                            canShowBPM = false
-                            revealTimeElapsed = false
-                            startPhase(duration: measureDuration)
-                            scheduleBPMReveal(after: bpmRevealAfter)
-                        }
-                    }
-                    pulseHeart()
-                }
-            }
-            lastPeakTS = now
-        }
-        lastCentered = centered
-    }
-
-    private func computeBPM(from intervals: [TimeInterval]) -> Int? {
-        guard !intervals.isEmpty else { return nil }
-        let avg = intervals.reduce(0, +) / Double(intervals.count)
-        guard avg > 0 else { return nil }
-        return Int(60.0 / avg)
-    }
-
-    private func pulseHeart() {
-        withAnimation(.easeInOut(duration: 0.12)) { heartScale = 1.2 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            withAnimation(.easeInOut(duration: 0.12)) { self.heartScale = 1.0 }
-        }
-    }
 }
-
-// MARK: - Video delegate
-
-extension StressViewModel: AVCaptureVideoDataOutputSampleBufferDelegate {
-    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        guard let px = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-
-        CVPixelBufferLockBaseAddress(px, .readOnly)
-        let width  = CVPixelBufferGetWidth(px)
-        let height = CVPixelBufferGetHeight(px)
-        let bpr    = CVPixelBufferGetBytesPerRow(px)
-        guard let base = CVPixelBufferGetBaseAddress(px)?.assumingMemoryBound(to: UInt8.self) else {
-            CVPixelBufferUnlockBaseAddress(px, .readOnly)
-            return
-        }
-
-        var sum: Double = 0
-        var count: Int  = 0
-        for y in stride(from: 0, to: height, by: 8) {
-            let row = base + y * bpr
-            for x in stride(from: 0, to: width * 4, by: 32) {
-                sum += Double(row[x + 2])
-                count += 1
-            }
-        }
-
-        CVPixelBufferUnlockBaseAddress(px, .readOnly)
-        guard count > 0 else { return }
-        let redMean = sum / Double(count)
-
-        DispatchQueue.main.async { [weak self] in
-            self?.handleSample(redMean)
-        }
-    }
-}
-
