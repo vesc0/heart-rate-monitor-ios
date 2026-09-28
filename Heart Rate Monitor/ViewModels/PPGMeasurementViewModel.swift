@@ -25,6 +25,7 @@ class PPGMeasurementViewModel: ObservableObject {
     private(set) var intervals: [TimeInterval] = []
 
     private let capture = PPGCaptureSession()
+    private let beatHaptic = UIImpactFeedbackGenerator(style: .medium)
     private var detector = PulseDetector()
     private let measureDuration: TimeInterval
     private let bpmRevealAfter: TimeInterval = 4
@@ -77,6 +78,7 @@ class PPGMeasurementViewModel: ObservableObject {
         reset()
         stoppedEarly = false
         phase = .measuring
+        beatHaptic.prepare()
         capture.start()
     }
 
@@ -148,6 +150,8 @@ class PPGMeasurementViewModel: ObservableObject {
     }
 
     private func pulseHeart() {
+        beatHaptic.impactOccurred()
+        beatHaptic.prepare()
         withAnimation(.easeInOut(duration: 0.12)) { heartScale = 1.2 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
             withAnimation(.easeInOut(duration: 0.12)) { self.heartScale = 1.0 }

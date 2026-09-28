@@ -41,6 +41,8 @@ class HeartRateViewModel: ObservableObject {
     private var autoBeatTimer: Timer?
     private var bpmRevealTimer: Timer?
 
+    private let beatHaptic = UIImpactFeedbackGenerator(style: .medium)
+
     // Persistence
     private let saveKey = "HeartRateLog"
     private let pendingCreatesKey = "HeartRateLog.pendingCreates"
@@ -61,6 +63,7 @@ class HeartRateViewModel: ObservableObject {
         invalidateAllTimers()
         resetInMemoryOnly()
         phase = .measuring
+        beatHaptic.prepare()
         // Timer starts on first tap
     }
 
@@ -149,6 +152,8 @@ class HeartRateViewModel: ObservableObject {
     }
 
     private func pulseHeart() {
+        beatHaptic.impactOccurred()
+        beatHaptic.prepare()
         withAnimation(.easeInOut(duration: 0.12)) {
             self.heartScale = 1.2
         }
