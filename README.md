@@ -15,6 +15,7 @@ This is not a medical app. It is intended for entertainment and educational purp
 - [Getting Started](#getting-started)
 - [Usage](#usage)
 - [Project Architecture](#project-architecture)   
+- [Related Projects](#related-projects)  
 - [Screenshots](#screenshots)  
 
 ##  Features
@@ -99,13 +100,11 @@ Heart Rate Monitor/
 └── screenshots/
 ```
 
-### API Workspace
+## Related Projects
 
-If you want to run the backend locally, the API project is available here:
-
-```text
-https://github.com/vesc0/heart-rate-monitor-api
-```
+- [heart-rate-monitor-api](https://github.com/vesc0/heart-rate-monitor-api) — the backend API this app talks to. Handles auth, profiles, heart rate records, and stress inference. Run it locally if you want to use the app's account and stress features.
+- [heart-rate-monitor-ml](https://github.com/vesc0/heart-rate-monitor-ml) — trains the stress classifier served by the API, from 60-second windows of beat-to-beat intervals (WESAD dataset).
+- [heart-rate-monitor-android](https://github.com/vesc0/heart-rate-monitor-android) — the Android version of this app.
 
 ## Screenshots
 
