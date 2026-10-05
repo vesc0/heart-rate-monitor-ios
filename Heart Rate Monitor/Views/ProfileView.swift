@@ -14,6 +14,7 @@ struct ProfileView: View {
     @State private var selectedAuthTab = 0 // 0 = Login, 1 = Sign Up
     @State private var editingField: EditableField? = nil
     @State private var profileError: String?
+    @State private var showDeleteConfirm = false
 
     enum EditableField: String, CaseIterable, Identifiable {
         case name, email, age, gender, height, weight, health
@@ -83,6 +84,12 @@ struct ProfileView: View {
                     showAuthSheet = false
                     profileError = nil
                 }
+            }
+            .alert("Delete Account?", isPresented: $showDeleteConfirm) {
+                Button("Delete", role: .destructive) { deleteAccount() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This permanently deletes your account and all saved measurements.")
             }
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.large)
@@ -198,11 +205,26 @@ struct ProfileView: View {
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.top, 8)
+
+            Button("Delete Account", role: .destructive) {
+                showDeleteConfirm = true
+            }
+            .font(.footnote)
             .padding(.bottom, 32)
         }
         .padding(.horizontal)
         .frame(maxWidth: 520)
         .frame(maxWidth: .infinity)
+    }
+
+    private func deleteAccount() {
+        Task {
+            do {
+                try await auth.deleteAccount()
+            } catch {
+                profileError = error.localizedDescription
+            }
+        }
     }
 
     // MARK: - Header Card

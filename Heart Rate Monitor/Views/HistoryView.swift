@@ -26,6 +26,7 @@ struct HistoryView: View {
     }
     private var todayStart: Date { calendar.startOfDay(for: Date()) }
 
+    #if DEBUG
     private var shouldSeed: Bool {
         vm.log.isEmpty
     }
@@ -58,6 +59,7 @@ struct HistoryView: View {
         vm.log = entries
         vm.saveData()
     }
+    #endif
 
     private var heartRateDailyRangesAll: [DailyMetricRange] {
         let grouped = Dictionary(grouping: vm.log) { entry in
@@ -229,12 +231,14 @@ struct HistoryView: View {
                                         .multilineTextAlignment(.center)
                                         .padding(.horizontal)
 
+                                    #if DEBUG
                                     Button("Load Demo Data") {
                                         seedSampleDataIfNeeded()
                                     }
                                     .buttonStyle(.borderedProminent)
                                     .tint(.red)
                                     .padding(.top, 8)
+                                    #endif
                                 }
                                 .frame(maxWidth: .infinity)
                                 .frame(minHeight: proxy.size.height, alignment: .center)

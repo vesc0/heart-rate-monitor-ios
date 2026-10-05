@@ -112,6 +112,11 @@ final class AuthViewModel: ObservableObject {
         clearPersistedProfile()
     }
 
+    func deleteAccount() async throws {
+        try await api.deleteAccount()
+        signOut()
+    }
+
     // MARK: - Profile
 
     // Fetch the current user's profile from the server and update local state.

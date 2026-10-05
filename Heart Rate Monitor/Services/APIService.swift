@@ -228,7 +228,7 @@ final class APIService {
 
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest  = 15
-        config.timeoutIntervalForResource = 30
+        config.timeoutIntervalForResource = 60
         session = URLSession(configuration: config)
 
         decoder = JSONDecoder()
@@ -330,6 +330,11 @@ final class APIService {
         return try await request(.put, path: "/me", body: body, authenticated: true)
     }
 
+    func deleteAccount() async throws {
+        try await requestNoContent(.delete, path: "/me", authenticated: true)
+        token = nil
+    }
+
     // MARK: - Heart-rate CRUD
 
     // Upserts on the server, so this doubles as the update path.
@@ -377,7 +382,8 @@ final class APIService {
     func predictStress(features: StressPredictRequest) async throws -> StressPredictResponse {
         let bodyData = try JSONEncoder().encode(features)
         let bodyDict = try JSONSerialization.jsonObject(with: bodyData) as? [String: Any] ?? [:]
-        return try await request(.post, path: "/stress-analysis", body: bodyDict, authenticated: true)
+        // The server may spend up to 20 s on the written explanation.
+        return try await request(.post, path: "/stress-analysis", body: bodyDict, authenticated: true, timeout: 45)
     }
 
     // MARK: - Internals
@@ -390,9 +396,10 @@ final class APIService {
         _ method: HTTPMethod,
         path: String,
         body: [String: Any]? = nil,
-        authenticated: Bool = false
+        authenticated: Bool = false,
+        timeout: TimeInterval? = nil
     ) async throws -> T {
-        let data = try await rawRequest(method, path: path, body: body, authenticated: authenticated)
+        let data = try await rawRequest(method, path: path, body: body, authenticated: authenticated, timeout: timeout)
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
@@ -413,13 +420,15 @@ final class APIService {
         _ method: HTTPMethod,
         path: String,
         body: [String: Any]?,
-        authenticated: Bool
+        authenticated: Bool,
+        timeout: TimeInterval? = nil
     ) async throws -> Data {
         guard let url = URL(string: baseURL + path) else {
             throw APIError.invalidURL
         }
 
         var request = URLRequest(url: url)
+        if let timeout { request.timeoutInterval = timeout }
         request.httpMethod = method.rawValue
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 

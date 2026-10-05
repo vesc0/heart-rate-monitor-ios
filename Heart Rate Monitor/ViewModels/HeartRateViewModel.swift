@@ -205,7 +205,7 @@ class HeartRateViewModel: ObservableObject {
         flush()
         if isAppleHealthSyncEnabled {
             Task {
-                _ = await healthKit.saveHeartRate(bpm: entry.bpm, at: entry.date)
+                _ = await healthKit.saveHeartRate(bpm: entry.bpm, at: entry.date, id: entry.id)
             }
         }
     }
@@ -235,7 +235,7 @@ class HeartRateViewModel: ObservableObject {
         var exported = 0
         var failed = 0
         for entry in snapshot {
-            let ok = await healthKit.saveHeartRate(bpm: entry.bpm, at: entry.date)
+            let ok = await healthKit.saveHeartRate(bpm: entry.bpm, at: entry.date, id: entry.id)
             if ok { exported += 1 } else { failed += 1 }
         }
 

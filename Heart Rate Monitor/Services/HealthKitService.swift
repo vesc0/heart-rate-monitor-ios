@@ -41,7 +41,7 @@ final class HealthKitService {
         return granted
     }
 
-    func saveHeartRate(bpm: Int, at date: Date) async -> Bool {
+    func saveHeartRate(bpm: Int, at date: Date, id: UUID) async -> Bool {
         guard isAvailable,
               let heartRateType = HKObjectType.quantityType(forIdentifier: .heartRate) else {
             return false
@@ -54,7 +54,11 @@ final class HealthKitService {
 
         let unit = HKUnit.count().unitDivided(by: .minute())
         let quantity = HKQuantity(unit: unit, doubleValue: Double(bpm))
-        let sample = HKQuantitySample(type: heartRateType, quantity: quantity, start: date, end: date)
+        // The sync identifier makes re-exporting an entry replace its sample instead of duplicating it.
+        let sample = HKQuantitySample(
+            type: heartRateType, quantity: quantity, start: date, end: date,
+            metadata: [HKMetadataKeySyncIdentifier: id.uuidString, HKMetadataKeySyncVersion: 1]
+        )
 
         return await withCheckedContinuation { continuation in
             healthStore.save(sample) { success, _ in
