@@ -22,15 +22,17 @@ This is not a medical app. It is intended for entertainment and educational purp
 
 - **Manual Mode**: Tap in rhythm with your pulse to record heart rate.
 - **Automatic Mode**: Place your finger over the rear camera. The app detects your pulse by analyzing subtle color changes.
-- **Stress**: Place your finger over the rear camera. The app sends HRV-related data to the API, where an ML model performs real-time inference.
+- **Stress**: Place your finger over the rear camera for 60 seconds. The app computes HRV features on the device and sends them to the API, where an ML model returns a stress level and a short written explanation.
 - **Stats**: View your past sessions, delete entries, see your average heart rate and stress level, and monthly trends.
-- **Profile**: Log in or sign up to save measurements and edit personal data.
+- **Profile**: Log in or sign up to sync measurements, edit personal data, or delete your account.
+- **Apple Health**: Optionally save heart rate results to Apple Health.
 
 ##  Tech Stack
 
 - **SwiftUI + MVVM**: Clean separation of UI (`Views`) and logic (`ViewModels`).
 - **Auth + Profile Sync**: Profile data is fetched and updated through the app API.
-- **Persistence**: Uses `UserDefaults` with `Codable`, saving results across app launches.
+- **Persistence**: Measurements are cached in `UserDefaults` with `Codable` and synced to the API; changes made offline are queued and retried. The session token is stored in the Keychain.
+- **HRV features**: `HRVFeatures.swift` mirrors the training pipeline's feature extraction, and unit tests pin the two together.
 - **Auto Mode**:
   - Uses `AVCaptureSession` for real-time camera capture.
   - Processes pixel data to estimate heart rate via red-channel intensity.
@@ -40,19 +42,23 @@ This is not a medical app. It is intended for entertainment and educational purp
 ##  Getting Started
 
 **Prerequisites**:
-- Xcode 15+  
-- iOS 17.6+
+- Xcode 26+
+- iOS 26+
+- A running [heart-rate-monitor-api](https://github.com/vesc0/heart-rate-monitor-api) for accounts and stress analysis
 
 **Setup**:
 ```bash
 git clone https://github.com/vesc0/Heart-Rate-Monitor.git
 cd "Heart Rate Monitor"
+cp Config.example.xcconfig Config.xcconfig
 open "Heart Rate Monitor.xcodeproj"
 ```
 
+Set `API_BASE_URL` in `Config.xcconfig` to your API host; the file explains the format. The app will not launch without it.
+
 **Run**:
-- Select your target (or simulator).
-- Hit ⌘R to build and launch.
+- Select your target (or simulator). Camera measurements need a physical device.
+- Hit ⌘R to build and launch, or ⌘U to run the unit tests.
 
 ##  Usage
 
@@ -76,11 +82,16 @@ Heart Rate Monitor/
 │   │   └── SessionPhase.swift
 │   ├── Services/
 │   │   ├── APIService.swift
-│   │   └── HealthKitService.swift
+│   │   ├── HealthKitService.swift
+│   │   ├── HRVFeatures.swift
+│   │   ├── Keychain.swift
+│   │   ├── PPGCaptureSession.swift
+│   │   └── PulseDetector.swift
 │   ├── ViewModels/
 │   │   ├── AuthViewModel.swift
 │   │   ├── AutoHeartRateViewModel.swift
 │   │   ├── HeartRateViewModel.swift
+│   │   ├── PPGMeasurementViewModel.swift
 │   │   └── StressViewModel.swift
 │   ├── Views/
 │   │   ├── CameraPreview.swift
@@ -94,7 +105,10 @@ Heart Rate Monitor/
 │   │   ├── SignUpView.swift
 │   │   ├── WelcomeView.swift
 │   │   └── ViewExtensions.swift
+├── Heart Rate MonitorTests/
+│   └── HRVFeaturesTests.swift
 ├── Heart Rate Monitor.xcodeproj/
+├── Config.example.xcconfig
 ├── Heart-Rate-Monitor-Info.plist
 ├── README.md
 └── screenshots/
