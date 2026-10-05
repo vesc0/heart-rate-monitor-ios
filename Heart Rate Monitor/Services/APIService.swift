@@ -301,7 +301,13 @@ final class APIService {
     }
 
     func logout() {
+        guard let revoked = token, let url = URL(string: baseURL + "/logout") else { return }
         token = nil
+        // Best effort: the session is already gone on this device.
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(revoked)", forHTTPHeaderField: "Authorization")
+        session.dataTask(with: request).resume()
     }
 
     // MARK: - Profile
