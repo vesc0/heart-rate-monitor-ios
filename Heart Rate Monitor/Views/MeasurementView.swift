@@ -327,7 +327,7 @@ private struct StressContentView: View {
 
     private func saveFinishedStressMeasurement() {
         guard let bpm = stressVM.currentBPM, let state = selectedState else { return }
-        let stress = stressVM.stressResult.map { String(format: "%.0f%%", $0.stressLevelPct) }
+        let stress = stressVM.stressResult.map { Int($0.stressLevelPct.rounded()) }
         let explanation = stressVM.stressResult?.explanation
         let entry = HeartRateEntry(
             bpm: bpm,

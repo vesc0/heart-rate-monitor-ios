@@ -50,7 +50,7 @@ struct HistoryView: View {
                 let ts = calendar.date(from: comps) ?? dayDate
 
                 // Include stress demo entries so Stress monthly mode has data too.
-                let stress: String? = Bool.random() ? String(format: "%d%%", Int.random(in: 18...92)) : nil
+                let stress = Bool.random() ? Int.random(in: 18...92) : nil
                 let state = MeasurementState.allCases.randomElement()
                 entries.append(HeartRateEntry(bpm: bpm, date: ts, stressLevel: stress, activityState: state))
             }
@@ -81,7 +81,7 @@ struct HistoryView: View {
 
     private var stressDailyRangesAll: [DailyMetricRange] {
         let stressEntries = vm.log.compactMap { entry -> (Date, Int)? in
-            guard let stress = entry.stressLevel, let pct = stressPercentage(from: stress) else { return nil }
+            guard let pct = entry.stressLevel else { return nil }
             return (entry.date, pct)
         }
 
@@ -502,10 +502,6 @@ private struct PeriodStats {
 }
 
 private extension HistoryView {
-    func stressPercentage(from stress: String) -> Int? {
-        Int(stress.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespacesAndNewlines))
-    }
-
     func isSelected(_ day: DailyMetricRange) -> Bool {
         guard let s = selectedDay else { return false }
         return calendar.isDate(s, inSameDayAs: day.day)
@@ -552,24 +548,14 @@ private extension HistoryView {
         return df.string(from: date)
     }
 
-    func stressColor(for stress: String) -> Color {
-        if let pct = stressPercentage(from: stress) {
-            if pct >= 70 { return .red }
-            if pct >= 40 { return .orange }
-            return .green
-        }
-
-        let normalized = stress.lowercased()
-        if normalized.contains("high") || normalized.contains("stressed") { return .red }
-        if normalized.contains("medium") || normalized.contains("moderate") { return .orange }
+    func stressColor(for pct: Int) -> Color {
+        if pct >= 70 { return .red }
+        if pct >= 40 { return .orange }
         return .green
     }
 
-    func stressDisplayText(for stress: String) -> String {
-        if let pct = stressPercentage(from: stress) {
-            return "\(pct)% stressed"
-        }
-        return stress
+    func stressDisplayText(for pct: Int) -> String {
+        "\(pct)% stressed"
     }
 
     func activityStateIcon(for state: MeasurementState) -> String {
@@ -979,28 +965,14 @@ private struct MeasurementDetailView: View {
         }
     }
     
-    private func stressPercentage(from stress: String) -> Int? {
-        Int(stress.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespacesAndNewlines))
-    }
-
-    private func stressColor(for stress: String) -> Color {
-        if let pct = stressPercentage(from: stress) {
-            if pct >= 70 { return .red }
-            if pct >= 40 { return .orange }
-            return .green
-        }
-
-        let normalized = stress.lowercased()
-        if normalized.contains("high") || normalized.contains("stressed") { return .red }
-        if normalized.contains("medium") || normalized.contains("moderate") { return .orange }
+    private func stressColor(for pct: Int) -> Color {
+        if pct >= 70 { return .red }
+        if pct >= 40 { return .orange }
         return .green
     }
 
-    private func stressDisplayText(for stress: String) -> String {
-        if let pct = stressPercentage(from: stress) {
-            return "\(pct)% stressed"
-        }
-        return stress
+    private func stressDisplayText(for pct: Int) -> String {
+        "\(pct)% stressed"
     }
 
     private func activityStateIcon(for state: MeasurementState) -> String {

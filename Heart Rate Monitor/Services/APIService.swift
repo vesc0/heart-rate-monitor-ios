@@ -104,7 +104,7 @@ struct HeartRateEntryResponse: Codable, Identifiable {
     let bpm: Int
     let recordedAt: Date
     let createdAt: Date
-    let stressLevel: String?
+    let stressLevel: Int?
     let stressExplanation: String?
     let activityState: MeasurementState?
 

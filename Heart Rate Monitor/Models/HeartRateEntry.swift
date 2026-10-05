@@ -78,7 +78,7 @@ struct HeartRateEntry: Identifiable, Codable, Equatable {
     let id: UUID
     let bpm: Int
     let date: Date
-    let stressLevel: String?
+    let stressLevel: Int?
     let activityState: MeasurementState?
     let stressExplanation: String?
 
@@ -87,7 +87,7 @@ struct HeartRateEntry: Identifiable, Codable, Equatable {
         bpm: Int,
         date: Date,
         id: UUID = UUID(),
-        stressLevel: String? = nil,
+        stressLevel: Int? = nil,
         activityState: MeasurementState? = nil,
         stressExplanation: String? = nil
     ) {
@@ -107,7 +107,7 @@ struct HeartRateEntry: Identifiable, Codable, Equatable {
         bpm = try c.decode(Int.self, forKey: .bpm)
         date = try c.decode(Date.self, forKey: .date)
         id = (try? c.decode(UUID.self, forKey: .id)) ?? UUID()
-        stressLevel = try? c.decode(String.self, forKey: .stressLevel)
+        stressLevel = try? c.decode(Int.self, forKey: .stressLevel)
         if let rawState = try? c.decode(String.self, forKey: .activityState) {
             activityState = MeasurementState(rawValue: rawState.lowercased())
         } else {
